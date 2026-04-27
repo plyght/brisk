@@ -1,0 +1,20 @@
+[package]
+name = "AssetsExample"
+version = "0.1.0"
+
+[app]
+bundle_id = "com.example.assets"
+deployment_target = "13.0"
+sources = "Sources"
+resources = []
+asset_catalogs = ["Assets.xcassets"]
+app_icon = "AppIcon"
+
+[build]
+architectures = ["arm64"]
+
+[signing]
+identity = "-"
+
+[test]
+sources = "Tests"

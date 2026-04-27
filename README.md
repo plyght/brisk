@@ -13,10 +13,13 @@ Brisk is a native macOS app build system and project manager for Swift. It repla
 - **Brisk Manifest**: Uses `brisk.toml` as the source of truth for app metadata, sources, resources, signing, tests, and archive output
 - **Direct SwiftUI Builds**: Builds native macOS app bundles from Swift source without requiring an Xcode project
 - **Resource Bundling**: Copies configured resource files and directories into `Contents/Resources`
+- **Asset Catalogs**: Compiles configured `.xcassets` catalogs with `actool` and supports manifest-defined app icons
 - **Info.plist Generation**: Generates the app plist from the manifest with support for custom keys
-- **Configurable Signing**: Supports ad-hoc or identity-based signing, entitlements, and hardened runtime
-- **Direct Tests**: Compiles and runs Swift test executables from a configured tests directory
-- **Direct Archives**: Produces archived `.app` bundles without requiring Xcode
+- **Configurable Architectures**: Builds direct apps for configured macOS architectures such as `arm64` and `x86_64`
+- **SwiftPM Dependencies**: Generates a Swift package when dependencies are configured and builds through SwiftPM
+- **Configurable Signing**: Supports ad-hoc or identity-based signing, entitlements, hardened runtime, zipped exports, and notarytool submission
+- **Direct Tests**: Compiles and runs Swift test executables or routes XCTest projects through SwiftPM
+- **Direct Archives**: Produces archived `.app` bundles and optional zipped exports without requiring an Xcode project
 - **Xcode Compatibility**: Automatically detects `.xcodeproj` and `.xcworkspace` containers when no Brisk manifest is present
 - **Clean Output Layout**: Keeps direct builds in `.build/` and derived/archive output in `.brisk/`
 
@@ -95,7 +98,24 @@ bundle_id = "com.example.hellobrisk"
 deployment_target = "13.0"
 sources = "Sources"
 resources = ["Resources"]
+asset_catalogs = ["Assets.xcassets"]
+app_icon = "AppIcon"
 entitlements = "Entitlements.plist"
+frameworks = ["AppKit"]
+swift_flags = []
+linker_flags = []
+
+[build]
+architectures = ["arm64", "x86_64"]
+platform = "macos"
+
+[[dependencies]]
+url = "https://github.com/apple/swift-argument-parser.git"
+package = "swift-argument-parser"
+products = ["ArgumentParser"]
+
+[dependencies.requirement]
+from = "1.3.0"
 
 [app.info]
 NSHumanReadableCopyright = "Copyright 2026"
@@ -104,12 +124,17 @@ LSApplicationCategoryType = "public.app-category.developer-tools"
 [signing]
 identity = "-"
 hardened_runtime = false
+notarize = false
+keychain_profile = "DeveloperID"
 
 [test]
 sources = "Tests"
+xctest = false
 
 [archive]
 path = ".brisk/Archives/HelloBrisk.app"
+export_path = ".brisk/Archives/HelloBrisk.zip"
+zip = true
 ```
 
 New projects are created with this layout:
@@ -173,10 +198,24 @@ Common Xcode options:
 
 Use `-v` or `--verbose` to print the underlying commands Brisk runs.
 
+## Xcode Replacement Scope
+
+Brisk now replaces the repeatable build-system parts of Xcode for direct macOS SwiftUI apps: app bundle creation, manifest metadata, resource copying, asset catalog compilation, SwiftPM dependencies, smoke tests, XCTest routing, signing, archives, zipped exports, notarization submission, and universal binary generation. Existing Xcode projects still use the compatibility backend for project features that are not safely modeled by `brisk.toml` yet.
+
+It does not replace Xcode's graphical editor, Interface Builder, visual debugger, Instruments, provisioning UI, simulator/device management UI, or every project-file feature. The direct backend is intended to keep expanding until most app builds do not need an Xcode project at all.
+
+## Examples
+
+The `examples/` directory includes small manifest-driven projects:
+
+- `examples/basic`: direct SwiftUI app with smoke tests
+- `examples/assets`: direct SwiftUI app configured for an asset catalog and app icon
+- `examples/xctest`: SwiftPM-backed XCTest example
+
 ## Architecture
 
 - `main.rs`: CLI parsing, command routing, backend selection, toolchain checks
-- `direct.rs`: Project creation, direct Swift compilation, test execution, resource bundling, app generation, signing, archiving
+- `direct.rs`: Project creation, direct Swift compilation, SwiftPM generation, XCTest routing, asset compilation, resource bundling, app generation, signing, notarization, archiving
 - `xcode.rs`: Xcode container discovery, scheme inference, build/test/archive orchestration, app path resolution
 - `config.rs`: Manifest model, legacy manifest normalization, loading, and saving
 - `cmd.rs`: Command execution and error handling

@@ -1,0 +1,19 @@
+[package]
+name = "XCTestExample"
+version = "0.1.0"
+
+[app]
+bundle_id = "com.example.xctest"
+deployment_target = "13.0"
+sources = "Sources"
+resources = []
+
+[build]
+architectures = ["arm64"]
+
+[signing]
+identity = "-"
+
+[test]
+sources = "Tests"
+xctest = true
