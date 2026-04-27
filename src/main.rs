@@ -13,7 +13,7 @@ use direct::{archive_direct_app, build_direct_app, init_app, new_app, test_direc
 use std::io;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
-use ui::status;
+use ui::{hint, status};
 use version::{BRISK_VERSION, is_newer};
 use xcode::{
     archive_xcode_app, build_xcode_app, has_xcode_project, list_xcode_project, test_xcode_app,
@@ -340,12 +340,11 @@ fn update_from_crates(force: bool) -> Result<()> {
     );
     println!("  {} {}", style("latest: ").dim(), style(&latest).cyan());
     if !is_newer(BRISK_VERSION, &latest) && !force {
-        println!("{} already up to date", style("✓").green());
-        println!(
-            "  {} use {} to reinstall anyway",
-            style("hint:").dim(),
+        ui::success("already up to date");
+        hint(format!(
+            "use {} to reinstall anyway",
             style("-f / --force").yellow()
-        );
+        ));
         return Ok(());
     }
     let mut args = vec!["install", "brisk", "--bin", "brisk"];
@@ -404,21 +403,19 @@ fn update_from_source(force: bool, clean: bool, no_clean: bool) -> Result<()> {
     run_cargo_install(&args, "build")?;
     if clean {
         let removed = cleanup_nightly_artifacts()?;
-        println!(
-            "{} cleaned {} nightly cache entr{}",
-            style("✓").green(),
+        ui::success(format!(
+            "cleaned {} nightly cache entr{}",
             removed,
             if removed == 1 { "y" } else { "ies" }
-        );
+        ));
     } else if !no_clean {
-        println!(
-            "  {} use {} or {} to control nightly cache cleanup",
-            style("hint:").dim(),
+        hint(format!(
+            "use {} or {} to control nightly cache cleanup",
             style("--clean").yellow(),
             style("--no-clean").yellow()
-        );
+        ));
     }
-    println!("{} installed nightly build from HEAD", style("✓").green());
+    ui::success("installed nightly build from HEAD");
     Ok(())
 }
 
