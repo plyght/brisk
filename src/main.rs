@@ -7,7 +7,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -34,6 +34,9 @@ enum BriskError {
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+
+    #[arg(short, long, global = true, help = "Show the commands brisk runs")]
+    verbose: bool,
 }
 
 #[derive(Subcommand)]
@@ -44,13 +47,13 @@ enum Commands {
         #[arg(long, help = "Bundle identifier, defaults to com.example.<app>")]
         bundle_id: Option<String>,
     },
-    #[command(about = "Build the app bundle  [alias: b]")]
+    #[command(about = "Build the app bundle")]
     #[command(visible_alias = "b")]
     Build {
         #[arg(short, long, help = "Release build")]
         release: bool,
     },
-    #[command(about = "Build and launch the app  [alias: r]")]
+    #[command(about = "Build and launch the app")]
     #[command(visible_alias = "r")]
     Run {
         #[arg(short, long, help = "Release build")]
@@ -105,16 +108,17 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::New { name, bundle_id } => new_app(&name, bundle_id),
-        Commands::Build { release } => build_app(release).map(|_| ()),
+        Commands::Build { release } => build_app(release, cli.verbose).map(|_| ()),
         Commands::Run { release } => {
-            let app = build_app(release)?;
+            let app = build_app(release, cli.verbose)?;
             status("launch", app.display());
             command("open").arg(&app).run()?;
             Ok(())
         }
         Commands::Path { release } => {
-            let config = BriskConfig::load(&cwd()?)?;
-            println!("{}", app_path(&cwd()?, &config, profile(release)).display());
+            let root = cwd()?;
+            let config = BriskConfig::load(&root)?;
+            println!("{}", app_path(&root, &config, profile(release)).display());
             Ok(())
         }
         Commands::Doctor => doctor(),
@@ -148,13 +152,17 @@ fn new_app(name: &str, bundle_id: Option<String>) -> Result<()> {
     )?;
 
     status("create", root.display());
-    println!("\n{}", style("next:").bold());
+    status_dim("write", root.join("brisk.toml").display());
+    status_dim("write", root.join("Sources/App.swift").display());
+    status_dim("write", root.join("Sources/ContentView.swift").display());
+    println!("\n{}", style("next").bold());
     println!("  cd {name}");
     println!("  brisk run");
     Ok(())
 }
 
-fn build_app(release: bool) -> Result<PathBuf> {
+fn build_app(release: bool, verbose: bool) -> Result<PathBuf> {
+    let started = Instant::now();
     doctor_quiet()?;
     let root = cwd()?;
     let config = BriskConfig::load(&root)?;
@@ -170,6 +178,14 @@ fn build_app(release: bool) -> Result<PathBuf> {
         return Err(BriskError::Message(
             "no Swift files found in Sources".to_string(),
         ));
+    }
+
+    status("profile", profile);
+    status("sources", swift_files.len());
+    if verbose {
+        for file in &swift_files {
+            status_dim("source", file.display());
+        }
     }
 
     let compile_spinner = spinner("compiling Swift");
@@ -190,6 +206,9 @@ fn build_app(release: bool) -> Result<PathBuf> {
     for file in &swift_files {
         swiftc.arg(file);
     }
+    if verbose {
+        status_dim("run", swiftc.display());
+    }
     swiftc
         .run_silent()
         .inspect_err(|_| compile_spinner.finish_and_clear())?;
@@ -200,16 +219,26 @@ fn build_app(release: bool) -> Result<PathBuf> {
     status("bundle", app.display());
 
     let spinner = spinner("ad-hoc signing");
-    command("codesign")
+    let mut codesign = command("codesign");
+    codesign
         .arg("--force")
         .arg("--deep")
         .arg("--sign")
         .arg("-")
-        .arg(&app)
+        .arg(&app);
+    if verbose {
+        status_dim("run", codesign.display());
+    }
+    codesign
         .run_silent()
         .inspect_err(|_| spinner.finish_and_clear())?;
     spinner.finish_and_clear();
     status("sign", "ad-hoc");
+    success(format!(
+        "built {} in {:.1}s",
+        app.display(),
+        started.elapsed().as_secs_f32()
+    ));
 
     Ok(app)
 }
@@ -229,15 +258,33 @@ fn create_bundle(config: &BriskConfig, bin_path: &Path, app: &Path) -> Result<()
 }
 
 fn doctor() -> Result<()> {
+    section("toolchain");
     let checks = [
         ("swiftc", "Swift compiler"),
         ("codesign", "Code signing"),
         ("open", "App launcher"),
     ];
     for (bin, label) in checks {
-        ensure_tool(bin)?;
-        println!("{} {}", style("✓").green().bold(), label);
+        let path = which(bin)?;
+        println!(
+            "{} {:<16} {}",
+            style("✓").green().bold(),
+            label,
+            style(path.display()).dim()
+        );
     }
+    if let Ok(output) = command("xcode-select").arg("-p").output() {
+        let path = String::from_utf8_lossy(&output).trim().to_string();
+        if !path.is_empty() {
+            println!(
+                "{} {:<16} {}",
+                style("✓").green().bold(),
+                "Developer dir",
+                style(path).dim()
+            );
+        }
+    }
+    success("ready");
     Ok(())
 }
 
@@ -249,14 +296,17 @@ fn doctor_quiet() -> Result<()> {
 }
 
 fn ensure_tool(bin: &str) -> Result<()> {
-    command("/usr/bin/which")
-        .arg(bin)
-        .run_silent()
-        .map_err(|_| {
-            BriskError::Message(format!(
-                "missing {bin}; install Xcode Command Line Tools with xcode-select --install"
-            ))
-        })
+    which(bin).map(|_| ())
+}
+
+fn which(bin: &str) -> Result<PathBuf> {
+    let output = command("/usr/bin/which").arg(bin).output().map_err(|_| {
+        BriskError::Message(format!(
+            "missing {bin}; install Xcode Command Line Tools with xcode-select --install"
+        ))
+    })?;
+    let path = String::from_utf8_lossy(&output).trim().to_string();
+    Ok(PathBuf::from(path))
 }
 
 fn clean() -> Result<()> {
@@ -318,6 +368,30 @@ impl Cmd {
         }
     }
 
+    fn output(&mut self) -> Result<Vec<u8>> {
+        let output = self
+            .inner
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()?;
+        if output.status.success() {
+            Ok(output.stdout)
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let detail = if !stderr.is_empty() { stderr } else { stdout };
+            Err(BriskError::Message(if detail.is_empty() {
+                format!("command failed with status {}", output.status)
+            } else {
+                detail
+            }))
+        }
+    }
+
+    fn display(&self) -> String {
+        format!("{:?}", self.inner).replace('"', "")
+    }
+
     fn run_silent(&mut self) -> Result<()> {
         let output = self
             .inner
@@ -358,6 +432,22 @@ fn status(action: &str, message: impl std::fmt::Display) {
         style(format!("{action:>8}")).green().bold(),
         message
     );
+}
+
+fn status_dim(action: &str, message: impl std::fmt::Display) {
+    println!(
+        "{} {}",
+        style(format!("{action:>8}")).dim(),
+        style(message.to_string()).dim()
+    );
+}
+
+fn section(name: &str) {
+    println!("{}", style(name).bold());
+}
+
+fn success(message: impl std::fmt::Display) {
+    println!("{} {}", style("✓").green().bold(), message);
 }
 
 fn cwd() -> Result<PathBuf> {
