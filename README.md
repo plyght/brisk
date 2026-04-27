@@ -1,24 +1,22 @@
 <div align='center'>
     <h3>Brisk</h3>
-    <p>Cargo-like builds for native Swift and Xcode-based macOS apps</p>
+    <p>Cargo-like builds for native Swift macOS apps</p>
     <br/>
     <br/>
 </div>
 
-The direct path from native Swift projects to real macOS `.app` bundles. Brisk gives SwiftUI, AppKit, and Xcode-based macOS apps a fast Rust CLI workflow: create simple apps, compile direct Swift sources, build existing `.xcodeproj` and `.xcworkspace` projects, and launch without opening Xcode.
+Brisk is a small command-line tool for creating, building, running, testing, and archiving native macOS apps without making everyday Swift development feel like project-file maintenance. It can compile simple SwiftUI apps directly with `swiftc`, or use existing Xcode projects and workspaces through `xcodebuild` when a full Apple project is already present.
 
 ## Features
 
-- **Native App Bundles**: Produces real `.app` bundles with `Contents/MacOS`, `Contents/Resources`, and `Info.plist`
-- **SwiftUI First**: Generates a minimal SwiftUI macOS app layout ready to run
-- **Xcode Project Support**: Builds existing `.xcodeproj` and `.xcworkspace` projects through `xcodebuild`
-- **Hybrid Backend**: Prefers Brisk's direct `swiftc` app builder for `brisk.toml` projects and falls back to `xcodebuild` for existing Xcode projects
-- **Full Xcode CLI Workflow**: Supports schemes, configurations, destinations, SDKs, extra `xcodebuild` flags, tests, archives, and project listing
-- **Xcode-Free Workflow**: Uses Apple command line tools directly so Brisk-native builds do not require opening Xcode or running `xcodebuild`
-- **Cargo-Like Commands**: Familiar `new`, `build`, `run`, `test`, `archive`, `list`, `clean`, and `path` commands
-- **Debug and Release Profiles**: Builds into `.build/debug` or `.build/release`
-- **Toolchain Checks**: Verifies required Apple CLI tools with `brisk doctor`
-- **Readable Output**: Clean status lines, quiet defaults, and verbose command tracing when needed
+- **Cargo-Like Workflow**: Create, build, run, test, archive, clean, and inspect apps through one focused CLI
+- **Direct SwiftUI Builds**: Builds lightweight native macOS app bundles from `Sources/*.swift` without requiring an Xcode project
+- **Xcode Project Support**: Automatically detects `.xcodeproj` and `.xcworkspace` containers and delegates to `xcodebuild`
+- **Automatic Backend Selection**: Uses `brisk.toml` projects directly and falls back to Xcode when project files or Xcode-specific flags are present
+- **App Bundle Generation**: Creates `.app` bundles with `Info.plist`, executable layout, and ad-hoc signing
+- **Release and Debug Profiles**: Supports optimized release builds and debug builds with symbols
+- **Toolchain Checks**: Verifies required Apple command-line tools with `brisk doctor`
+- **Clean Output Layout**: Keeps direct builds in `.build/` and Xcode derived data in `.brisk/`
 
 ## Install
 
@@ -30,154 +28,130 @@ cargo build --release
 sudo cp target/release/brisk /usr/local/bin/
 ```
 
-Requires macOS, Rust, and Apple command line tools. Install the Apple tools with:
-
-```bash
-xcode-select --install
-```
-
 ## Usage
 
 ```bash
 # Create a new SwiftUI macOS app
-brisk new Hello
-cd Hello
+brisk new HelloBrisk
+cd HelloBrisk
 
-# Build the debug app bundle
+# Build the app bundle
 brisk build
 
 # Build and launch the app
 brisk run
 
-# Build an optimized release bundle
-brisk build --release
-
-# Build an Xcode project or workspace
-brisk build --scheme MyApp
-brisk build --project MyApp.xcodeproj --scheme MyApp
-brisk build --workspace MyApp.xcworkspace --scheme MyApp
-brisk build --scheme MyApp --configuration Debug --destination 'platform=macOS'
-brisk build --scheme MyApp --sdk macosx -- CODE_SIGNING_ALLOWED=NO
-brisk build --backend direct
-brisk build --backend xcode --scheme MyApp
-
-# Run tests and create archives without opening Xcode
-brisk test --scheme MyApp --destination 'platform=macOS'
-brisk archive --scheme MyApp
-brisk archive --scheme MyApp --archive-path .build/MyApp.xcarchive
-
-# Inspect available Xcode schemes and targets
-brisk list
-brisk list --workspace MyApp.xcworkspace
-
-# Print the current app bundle path
+# Print the built .app path
 brisk path
 
-# Check the local Apple toolchain
-brisk doctor
+# Remove build output
+brisk clean
 ```
 
-Aliases and global flags:
+For Xcode projects, run Brisk from a directory containing an `.xcodeproj` or `.xcworkspace`:
 
 ```bash
-brisk b                  build
-brisk r                  run
-brisk -v build           show underlying swiftc/xcodebuild/codesign commands
+# List schemes and targets
+brisk list
+
+# Build the inferred scheme
+brisk build
+
+# Build a specific scheme
+brisk build --scheme MyApp
+
+# Run tests
+brisk test --scheme MyApp
+
+# Archive a release build
+brisk archive --scheme MyApp
 ```
 
-A direct Swift project follows this pipeline:
+Pass additional `xcodebuild` arguments after `--`:
 
-```text
-Swift sources -> swiftc binary -> .app bundle -> ad-hoc codesign
+```bash
+brisk build --scheme MyApp -- -allowProvisioningUpdates
 ```
-
-An Xcode project follows this pipeline:
-
-```text
-.xcodeproj/.xcworkspace -> xcodebuild -> DerivedData product -> .app bundle
-```
-
-Direct Swift project output is written to:
-
-```text
-.build/debug/<name>.app
-.build/release/<name>.app
-```
-
-Xcode project output is resolved from brisk-managed DerivedData:
-
-```text
-.brisk/DerivedData/Build/Products/<configuration>/<name>.app
-```
-
-## Project Layout
-
-```text
-Hello/
-  brisk.toml
-  Sources/
-    App.swift
-    ContentView.swift
-```
-
-`Sources/` may contain additional `.swift` files. Brisk recursively collects Swift files below this directory and passes them to `swiftc`.
-
-Existing Xcode projects can keep their normal layout:
-
-```text
-MyApp/
-  MyApp.xcodeproj
-  MyApp/
-    App.swift
-    Assets.xcassets
-```
-
-If a directory has `brisk.toml`, Brisk uses the direct backend by default, even when an `.xcworkspace` or `.xcodeproj` is also present. If there is no `brisk.toml`, Brisk falls back to the Xcode backend when it finds an `.xcworkspace` or `.xcodeproj`. Use `--backend direct` or `--backend xcode` to override automatic selection. Pass `--scheme` when the scheme cannot be inferred from the project or workspace name.
 
 ## Configuration
 
-Brisk projects are configured with `brisk.toml`:
+Direct Brisk projects use `brisk.toml` at the project root:
 
 ```toml
-name = "Hello"
-bundle_id = "com.example.hello"
+name = "HelloBrisk"
+bundle_id = "com.example.hellobrisk"
 deployment_target = "13.0"
 ```
 
-- `name`: App name, executable name, and bundle display name
-- `bundle_id`: macOS bundle identifier used in `Info.plist`
-- `deployment_target`: Minimum macOS version passed to the Swift compiler
+The direct backend expects Swift source files under `Sources/`:
+
+```text
+HelloBrisk/
+├── brisk.toml
+└── Sources/
+    ├── App.swift
+    └── ContentView.swift
+```
+
+By default, `brisk build` chooses the backend automatically:
+
+- If `brisk.toml` exists, Brisk uses the direct `swiftc` backend
+- If an Xcode workspace or project exists, Brisk uses the `xcodebuild` backend
+- If Xcode-specific flags are provided, Brisk uses the `xcodebuild` backend
+
+You can force a backend when needed:
+
+```bash
+brisk build --backend direct
+brisk build --backend xcode --scheme MyApp
+```
+
+## Commands
+
+```bash
+brisk new <name> [--bundle-id <id>]       # Create a new SwiftUI macOS app
+brisk build [--release]                   # Build the app bundle
+brisk run [--release]                     # Build and launch the app
+brisk path                                # Print the expected .app path
+brisk test                                # Run Xcode tests
+brisk archive [--archive-path <path>]     # Archive an Xcode app
+brisk list                                # List Xcode schemes and targets
+brisk doctor                              # Check required Apple CLI tools
+brisk clean                               # Remove build output
+```
+
+Common Xcode options:
+
+```bash
+--workspace <path>        # Xcode workspace
+--project <path>          # Xcode project
+--scheme <name>           # Xcode scheme
+--configuration <name>    # Build configuration
+--destination <specifier> # Xcode destination
+--sdk <sdk>               # Xcode SDK
+```
+
+Use `-v` or `--verbose` to print the underlying commands Brisk runs.
 
 ## Architecture
 
-- `main.rs`: CLI orchestration, backend selection, and top-level commands
-- `config.rs`: Project configuration loading and writing
-- `direct.rs`: Direct Swift source builds, scaffolding, bundling, and ad-hoc signing
-- `xcode.rs`: `.xcodeproj` and `.xcworkspace` builds, tests, archives, listing, and product resolution through `xcodebuild`
-- `cmd.rs`: Small command wrapper with readable error handling
-- `ui.rs`: Status lines, spinners, and success output
-
-## Current Scope
-
-Brisk is focused on native Apple-platform macOS apps: Swift, SwiftUI, AppKit, and Xcode-based projects. It is not intended for Electron, web wrappers, or non-native desktop stacks.
-
-The current implementation supports two backends:
-
-```text
-swiftc -> .app bundle -> ad-hoc codesign -> open
-.xcodeproj/.xcworkspace -> xcodebuild -> .app bundle -> open
-```
-
-Future work may cover notarization, App Store packaging, signing profile management, and deeper SwiftPM integration.
+- `main.rs`: CLI parsing, command routing, backend selection, toolchain checks
+- `direct.rs`: Direct SwiftUI project creation, `swiftc` compilation, app bundle generation, ad-hoc signing
+- `xcode.rs`: Xcode container discovery, scheme inference, build/test/archive orchestration, app path resolution
+- `config.rs`: `brisk.toml` loading and saving
+- `cmd.rs`: Command execution and error handling
+- `ui.rs`: Status output, sections, success messages, and spinners
 
 ## Development
 
 ```bash
 cargo build
 cargo test
-cargo clippy -- -D warnings
-cargo fmt
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
 ```
+
+Requires macOS with Xcode Command Line Tools installed. Direct builds require `swiftc`, `codesign`, `open`, and `xcrun`; Xcode-backed workflows also require `xcodebuild`.
 
 Key dependencies: clap, console, indicatif, serde, serde_json, thiserror, toml.
 
