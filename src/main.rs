@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use cmd::command;
 use config::{BriskConfig, has_manifest};
 use console::style;
-use direct::{archive_direct_app, build_direct_app, new_app, test_direct_app};
+use direct::{archive_direct_app, build_direct_app, init_app, new_app, test_direct_app};
 use std::io;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -54,6 +54,13 @@ enum Commands {
         name: String,
         #[arg(long, help = "Bundle identifier, defaults to com.example.<app>")]
         bundle_id: Option<String>,
+    },
+    #[command(about = "Create .brisk.toml for an existing Swift app")]
+    Init {
+        #[arg(long, help = "Bundle identifier, inferred when possible")]
+        bundle_id: Option<String>,
+        #[arg(long, help = "Overwrite an existing Brisk manifest")]
+        force: bool,
     },
     #[command(about = "Build the app bundle")]
     #[command(visible_alias = "b")]
@@ -168,6 +175,7 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::New { name, bundle_id } => new_app(&name, bundle_id),
+        Commands::Init { bundle_id, force } => init_app(&cwd()?, bundle_id, force),
         Commands::Build(args) => build_app(build_options(args, cli.verbose)).map(|_| ()),
         Commands::Run(args) => {
             let app = build_app(build_options(args, cli.verbose))?;

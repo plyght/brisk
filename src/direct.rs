@@ -1,6 +1,7 @@
 use crate::cmd::command;
 use crate::config::{
-    BriskConfig, SwiftPackageDependency, global_default_organization_id, manifest_path, new_config,
+    BriskConfig, SwiftPackageDependency, global_default_organization_id, has_manifest,
+    manifest_path, new_config,
 };
 use crate::ui::{spinner, status, status_dim, success};
 use crate::{BriskError, Result, profile};
@@ -48,6 +49,72 @@ pub fn new_app(name: &str, bundle_id: Option<String>) -> Result<()> {
     println!("\n{}", console::style("next").bold());
     println!("  cd {name}");
     println!("  brisk run");
+    Ok(())
+}
+
+pub fn init_app(root: &Path, bundle_id: Option<String>, force: bool) -> Result<()> {
+    if has_manifest(root) && !force {
+        return Err(BriskError::Message(format!(
+            "{} already exists (use --force to overwrite)",
+            manifest_path(root)
+                .unwrap_or_else(|| root.join(".brisk.toml"))
+                .display()
+        )));
+    }
+    let package_swift = root.join("Package.swift");
+    if !package_swift.exists() {
+        return Err(BriskError::Message(format!(
+            "could not find Package.swift in {}",
+            root.display()
+        )));
+    }
+    let package = fs::read_to_string(&package_swift)?;
+    let name = infer_package_name(&package)
+        .or_else(|| {
+            root.file_name()
+                .map(|name| name.to_string_lossy().to_string())
+        })
+        .unwrap_or_else(|| "App".to_string());
+    let bundle_id = bundle_id
+        .or_else(|| infer_info_string(root, "CFBundleIdentifier"))
+        .unwrap_or(default_bundle_id(&name)?);
+    let mut config = new_config(&name, bundle_id);
+    if let Some(version) = infer_info_string(root, "CFBundleShortVersionString") {
+        config.package.version = version;
+    }
+    if let Some(target) = infer_macos_target(&package) {
+        config.app.deployment_target = target;
+    }
+    if let Some(sources) = infer_sources(root, &name) {
+        config.app.sources = sources;
+    }
+    config.app.frameworks = infer_frameworks(&package);
+    if root.join("Resources").exists() {
+        config.app.resources = vec![PathBuf::from("Resources")];
+    }
+    for key in [
+        "CFBundleName",
+        "CFBundleDisplayName",
+        "CFBundleIconFile",
+        "LSApplicationCategoryType",
+        "NSHumanReadableCopyright",
+    ] {
+        if let Some(value) = infer_info_string(root, key) {
+            config
+                .app
+                .info
+                .insert(key.to_string(), toml::Value::String(value));
+        }
+    }
+    if let Some(value) = infer_info_bool(root, "NSHighResolutionCapable") {
+        config.app.info.insert(
+            "NSHighResolutionCapable".to_string(),
+            toml::Value::Boolean(value),
+        );
+    }
+    config.save(root)?;
+    status("write", root.join(".brisk.toml").display());
+    success("initialized Brisk manifest");
     Ok(())
 }
 
@@ -184,6 +251,92 @@ pub fn archive_direct_app(
     }
     success(format!("archived {}", archive.display()));
     Ok(archive)
+}
+
+fn infer_package_name(package: &str) -> Option<String> {
+    let key = "name:";
+    let start = package.find(key)? + key.len();
+    quoted_after(&package[start..])
+}
+
+fn infer_macos_target(package: &str) -> Option<String> {
+    let marker = ".macOS(.v";
+    let start = package.find(marker)? + marker.len();
+    let rest = &package[start..];
+    let version = rest
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '_')
+        .collect::<String>()
+        .replace('_', ".");
+    (!version.is_empty()).then_some(version)
+}
+
+fn infer_frameworks(package: &str) -> Vec<String> {
+    let mut frameworks = Vec::new();
+    let marker = ".linkedFramework(";
+    let mut rest = package;
+    while let Some(i) = rest.find(marker) {
+        rest = &rest[i + marker.len()..];
+        if let Some(framework) = quoted_after(rest)
+            && !frameworks.contains(&framework)
+        {
+            frameworks.push(framework);
+        }
+    }
+    frameworks
+}
+
+fn quoted_after(input: &str) -> Option<String> {
+    let start = input.find('"')? + 1;
+    let rest = &input[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+fn infer_sources(root: &Path, name: &str) -> Option<PathBuf> {
+    let candidates = [
+        PathBuf::from("Sources").join(name),
+        PathBuf::from("Sources").join(name.to_ascii_lowercase()),
+        PathBuf::from("Sources"),
+    ];
+    candidates.into_iter().find(|candidate| {
+        root.join(candidate).join("main.swift").exists()
+            || root.join(candidate).join("App.swift").exists()
+    })
+}
+
+fn infer_info_string(root: &Path, key: &str) -> Option<String> {
+    let plist = fs::read_to_string(root.join("Resources/Info.plist")).ok()?;
+    let key_tag = format!("<key>{key}</key>");
+    let start = plist.find(&key_tag)? + key_tag.len();
+    let rest = &plist[start..];
+    let string_start = rest.find("<string>")? + "<string>".len();
+    let value_rest = &rest[string_start..];
+    let string_end = value_rest.find("</string>")?;
+    Some(unescape_xml(&value_rest[..string_end]))
+}
+
+fn infer_info_bool(root: &Path, key: &str) -> Option<bool> {
+    let plist = fs::read_to_string(root.join("Resources/Info.plist")).ok()?;
+    let key_tag = format!("<key>{key}</key>");
+    let start = plist.find(&key_tag)? + key_tag.len();
+    let rest = plist[start..].trim_start();
+    if rest.starts_with("<true") {
+        Some(true)
+    } else if rest.starts_with("<false") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+fn unescape_xml(value: &str) -> String {
+    value
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&gt;", ">")
+        .replace("&lt;", "<")
+        .replace("&amp;", "&")
 }
 
 fn compile_with_swiftc(
@@ -349,9 +502,16 @@ fn copy_swiftpm_binary(
 }
 
 fn write_package_swift(root: &Path, config: &BriskConfig) -> Result<()> {
+    let path = root.join("Package.swift");
+    if path.exists() {
+        return Err(BriskError::Message(format!(
+            "refusing to overwrite existing {} for dependency build",
+            path.display()
+        )));
+    }
     let package = package_swift(config);
-    fs::write(root.join("Package.swift"), package)?;
-    status_dim("write", root.join("Package.swift").display());
+    fs::write(&path, package)?;
+    status_dim("write", path.display());
     Ok(())
 }
 

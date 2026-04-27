@@ -47,6 +47,9 @@ cd HelloBrisk
 # Build the app bundle
 brisk build
 
+# Adopt an existing SwiftPM app by generating .brisk.toml
+brisk init
+
 # Build and launch the app
 brisk run
 
@@ -66,6 +69,8 @@ brisk clean
 brisk update
 brisk update --nightly
 ```
+
+For existing SwiftPM macOS apps, run `brisk init` from the project root. Brisk infers the package name, source path, deployment target, linked frameworks, bundle identifier, app version, and common Info.plist keys when possible. Use `brisk init --force` to overwrite an existing Brisk manifest.
 
 For Xcode projects, run Brisk from a directory containing an `.xcodeproj` or `.xcworkspace`:
 

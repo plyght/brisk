@@ -197,10 +197,21 @@ impl Default for TestConfig {
 impl BriskConfig {
     pub fn load(root: &Path) -> Result<Self> {
         let path = manifest_path(root).ok_or_else(|| {
+            let hint = if root.join("Package.swift").exists() {
+                format!(
+                    "found Package.swift but no Brisk manifest\nrun {} to create one, or use brisk in a directory with an .xcodeproj/.xcworkspace",
+                    style("brisk init").cyan()
+                )
+            } else {
+                format!(
+                    "run {} first, or use brisk in a directory with an .xcodeproj/.xcworkspace",
+                    style("brisk new <name>").cyan()
+                )
+            };
             BriskError::Message(format!(
-                "could not find .brisk.toml or brisk.toml in {}\nrun {} first, or use brisk in a directory with an .xcodeproj/.xcworkspace",
+                "could not find .brisk.toml or brisk.toml in {}\n{}",
                 root.display(),
-                style("brisk new <name>").cyan()
+                hint
             ))
         })?;
         let raw = fs::read_to_string(&path).map_err(|e| {
