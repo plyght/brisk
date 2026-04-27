@@ -53,7 +53,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "brisk"
+name = "brisk-pkg"
 version = "0.1.2"
 dependencies = [
  "clap",

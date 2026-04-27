@@ -1,5 +1,5 @@
 [package]
-name = "brisk"
+name = "brisk-pkg"
 version = "0.1.2"
 edition = "2024"
 authors = ["Brisk Contributors"]
