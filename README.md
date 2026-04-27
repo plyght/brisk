@@ -62,9 +62,9 @@ brisk path
 # Remove build output
 brisk clean
 
-# Update brisk itself
-brisk update self
-brisk update self-nightly
+# Update brisk
+brisk update
+brisk update --nightly
 ```
 
 For Xcode projects, run Brisk from a directory containing an `.xcodeproj` or `.xcworkspace`:
@@ -204,7 +204,7 @@ brisk path                                # Print the expected .app path
 brisk test                                # Run direct or Xcode tests
 brisk archive [--release]                 # Archive the app
 brisk list                                # List Xcode schemes and targets
-brisk update [self|self-nightly]          # Update brisk from crates.io or GitHub HEAD
+brisk update [--nightly]                  # Update brisk from crates.io or GitHub HEAD
 brisk doctor                              # Check required Apple CLI tools
 brisk clean                               # Remove build output
 ```

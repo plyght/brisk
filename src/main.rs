@@ -74,15 +74,13 @@ enum Commands {
     },
     #[command(about = "List Xcode schemes and targets")]
     List(XcodeContainerArgs),
-    #[command(about = "Update brisk itself")]
+    #[command(about = "Update brisk")]
     Update {
-        #[arg(
-            help = "Optional shorthand: s/self for stable self-update, sn/self-nightly for GitHub HEAD"
-        )]
+        #[arg(help = "Optional compatibility alias: self or self-nightly")]
         action: Option<String>,
-        #[arg(short = 's', long = "self", help = "Update brisk from crates.io")]
+        #[arg(short = 's', long = "self", hide = true)]
         update_self: bool,
-        #[arg(short, long, help = "Use nightly build from GitHub HEAD")]
+        #[arg(short, long, help = "Update from GitHub HEAD")]
         nightly: bool,
         #[arg(
             short,
@@ -307,7 +305,7 @@ fn update(
             }
             other => {
                 return Err(BriskError::Message(format!(
-                    "unknown update shorthand '{other}' (use s/self or sn/self-nightly)"
+                    "unknown update alias '{other}' (use self or self-nightly)"
                 )));
             }
         }
@@ -317,15 +315,7 @@ fn update(
             "cannot specify both --clean and --no-clean".to_string(),
         ));
     }
-    if !update_self {
-        println!(
-            "{} brisk has no project index to update; use {} or {}",
-            style("hint:").dim(),
-            style("brisk update self").yellow(),
-            style("brisk update self-nightly").yellow()
-        );
-        return Ok(());
-    }
+    let _ = update_self;
     if nightly {
         update_from_source(force, clean, no_clean)
     } else {
