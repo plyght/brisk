@@ -1,0 +1,17 @@
+[package]
+name = "brisk"
+version = "0.1.0"
+edition = "2024"
+authors = ["Brisk Contributors"]
+description = "Cargo-like CLI for native macOS Swift apps"
+license = "MIT"
+keywords = ["macos", "swift", "swiftui", "cli", "build-tool"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+clap = { version = "4", features = ["derive", "cargo"] }
+console = "0.16"
+indicatif = "0.18"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+toml = "0.9"

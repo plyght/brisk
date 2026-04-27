@@ -1,0 +1,3 @@
+name = "HelloBrisk"
+bundle_id = "com.example.hellobrisk"
+deployment_target = "13.0"
