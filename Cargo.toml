@@ -1,6 +1,6 @@
 [package]
 name = "brisk"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Brisk Contributors"]
 description = "Build, test, sign, and ship native Swift macOS apps without living in Xcode"
