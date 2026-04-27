@@ -12,6 +12,7 @@ use console::style;
 use direct::{archive_direct_app, build_direct_app, init_app, new_app, test_direct_app};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use thiserror::Error;
 use ui::{hint, status};
 use version::{BRISK_VERSION, is_newer};
@@ -177,12 +178,7 @@ fn run() -> Result<()> {
         Commands::New { name, bundle_id } => new_app(&name, bundle_id),
         Commands::Init { bundle_id, force } => init_app(&cwd()?, bundle_id, force),
         Commands::Build(args) => build_app(build_options(args, cli.verbose)).map(|_| ()),
-        Commands::Run(args) => {
-            let app = build_app(build_options(args, cli.verbose))?;
-            status("launch", app.display());
-            command("open").arg(&app).run()?;
-            Ok(())
-        }
+        Commands::Run(args) => run_app(build_options(args, cli.verbose)),
         Commands::Path(args) => {
             let opts = build_options(args, cli.verbose);
             println!("{}", app_path_for_current_project(&opts)?.display());
@@ -230,6 +226,68 @@ fn build_app(opts: BuildOptions) -> Result<PathBuf> {
         doctor_quiet(false)?;
         build_direct_app(&root, opts.release, opts.verbose)
     }
+}
+
+fn run_app(opts: BuildOptions) -> Result<()> {
+    let app = build_app(opts)?;
+    let bundle_id = bundle_id_for_app(&app)?;
+    if let Some(bundle_id) = bundle_id.as_deref() {
+        quit_running_app(bundle_id);
+        install_run_interrupt_handler(bundle_id)?;
+    }
+    status("run", app.display());
+    hint("press Ctrl-C to stop");
+    let status = Command::new("open")
+        .arg("-W")
+        .arg(&app)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(BriskError::Message(format!(
+            "app exited with status {status}"
+        )))
+    }
+}
+
+fn bundle_id_for_app(app: &Path) -> Result<Option<String>> {
+    let plist = app.join("Contents/Info.plist");
+    if !plist.exists() {
+        return Ok(None);
+    }
+    let output = Command::new("/usr/libexec/PlistBuddy")
+        .arg("-c")
+        .arg("Print :CFBundleIdentifier")
+        .arg(plist)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    let bundle_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok((!bundle_id.is_empty()).then_some(bundle_id))
+}
+
+fn quit_running_app(bundle_id: &str) {
+    let _ = Command::new("osascript")
+        .arg("-e")
+        .arg(format!("tell application id \"{bundle_id}\" to quit"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+fn install_run_interrupt_handler(bundle_id: &str) -> Result<()> {
+    let bundle_id = bundle_id.to_string();
+    ctrlc::set_handler(move || {
+        quit_running_app(&bundle_id);
+        std::process::exit(130);
+    })
+    .map_err(|err| BriskError::Message(format!("failed to install Ctrl-C handler: {err}")))
 }
 
 fn test_app(opts: BuildOptions) -> Result<()> {

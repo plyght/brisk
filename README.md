@@ -50,7 +50,7 @@ brisk build
 # Adopt an existing SwiftPM app by generating .brisk.toml
 brisk init
 
-# Build and launch the app
+# Build and live-run the app until it quits or you press Ctrl-C
 brisk run
 
 # Run direct Swift tests
@@ -204,7 +204,7 @@ deployment_target = "13.0"
 ```bash
 brisk new <name> [--bundle-id <id>]       # Create a new SwiftUI macOS app
 brisk build [--release]                   # Build the app bundle
-brisk run [--release]                     # Build and launch the app
+brisk run [--release]                     # Build and live-run the app until it quits or Ctrl-C
 brisk path                                # Print the expected .app path
 brisk test                                # Run direct or Xcode tests
 brisk archive [--release]                 # Archive the app
