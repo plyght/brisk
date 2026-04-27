@@ -26,11 +26,15 @@ Brisk is a native macOS app build system and project manager for Swift. It repla
 ## Install
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/plyght/brisk/main/install.sh | bash
+
 # From source
 git clone https://github.com/plyght/brisk.git
 cd brisk
+./install.sh
+
 cargo build --release
-sudo cp target/release/brisk /usr/local/bin/
+cp target/release/brisk ~/.local/bin/
 ```
 
 ## Usage
@@ -57,6 +61,10 @@ brisk path
 
 # Remove build output
 brisk clean
+
+# Update brisk itself
+brisk update self
+brisk update self-nightly
 ```
 
 For Xcode projects, run Brisk from a directory containing an `.xcodeproj` or `.xcworkspace`:
@@ -196,6 +204,7 @@ brisk path                                # Print the expected .app path
 brisk test                                # Run direct or Xcode tests
 brisk archive [--release]                 # Archive the app
 brisk list                                # List Xcode schemes and targets
+brisk update [self|self-nightly]          # Update brisk from crates.io or GitHub HEAD
 brisk doctor                              # Check required Apple CLI tools
 brisk clean                               # Remove build output
 ```

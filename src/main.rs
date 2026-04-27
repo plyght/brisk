@@ -2,6 +2,7 @@ mod cmd;
 mod config;
 mod direct;
 mod ui;
+mod version;
 mod xcode;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -13,11 +14,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use ui::status;
+use version::{BRISK_VERSION, is_newer};
 use xcode::{
     archive_xcode_app, build_xcode_app, has_xcode_project, list_xcode_project, test_xcode_app,
 };
-
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 type Result<T> = std::result::Result<T, BriskError>;
 
@@ -37,7 +37,7 @@ enum BriskError {
 
 #[derive(Parser)]
 #[command(name = "brisk")]
-#[command(version = VERSION)]
+#[command(version = BRISK_VERSION)]
 #[command(about = "brisk - native builds for Swift macOS apps", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -74,6 +74,30 @@ enum Commands {
     },
     #[command(about = "List Xcode schemes and targets")]
     List(XcodeContainerArgs),
+    #[command(about = "Update brisk itself")]
+    Update {
+        #[arg(
+            help = "Optional shorthand: s/self for stable self-update, sn/self-nightly for GitHub HEAD"
+        )]
+        action: Option<String>,
+        #[arg(short = 's', long = "self", help = "Update brisk from crates.io")]
+        update_self: bool,
+        #[arg(short, long, help = "Use nightly build from GitHub HEAD")]
+        nightly: bool,
+        #[arg(
+            short,
+            long,
+            help = "Force reinstall even when current version is latest"
+        )]
+        force: bool,
+        #[arg(
+            long,
+            help = "After nightly self-update, clean Cargo git cache for brisk"
+        )]
+        clean: bool,
+        #[arg(long, help = "After nightly self-update, keep Cargo git cache")]
+        no_clean: bool,
+    },
     #[command(about = "Check required Apple CLI tools")]
     Doctor,
     #[command(about = "Remove build output")]
@@ -163,6 +187,14 @@ fn run() -> Result<()> {
             archive_app(build_options(args, cli.verbose), archive_path).map(|_| ())
         }
         Commands::List(args) => list_xcode_project(&cwd()?, args.workspace, args.project),
+        Commands::Update {
+            action,
+            update_self,
+            nightly,
+            force,
+            clean,
+            no_clean,
+        } => update(action, update_self, nightly, force, clean, no_clean),
         Commands::Doctor => doctor(),
         Commands::Clean => clean(),
     }
@@ -256,6 +288,184 @@ fn has_xcode_only_options(opts: &BuildOptions) -> bool {
         || opts.destination.is_some()
         || opts.sdk.is_some()
         || !opts.xcode_args.is_empty()
+}
+
+fn update(
+    action: Option<String>,
+    mut update_self: bool,
+    mut nightly: bool,
+    force: bool,
+    clean: bool,
+    no_clean: bool,
+) -> Result<()> {
+    if let Some(action) = action {
+        match action.as_str() {
+            "s" | "self" => update_self = true,
+            "sn" | "self-nightly" => {
+                update_self = true;
+                nightly = true;
+            }
+            other => {
+                return Err(BriskError::Message(format!(
+                    "unknown update shorthand '{other}' (use s/self or sn/self-nightly)"
+                )));
+            }
+        }
+    }
+    if clean && no_clean {
+        return Err(BriskError::Message(
+            "cannot specify both --clean and --no-clean".to_string(),
+        ));
+    }
+    if !update_self {
+        println!(
+            "{} brisk has no project index to update; use {} or {}",
+            style("hint:").dim(),
+            style("brisk update self").yellow(),
+            style("brisk update self-nightly").yellow()
+        );
+        return Ok(());
+    }
+    if nightly {
+        update_from_source(force, clean, no_clean)
+    } else {
+        update_from_crates(force)
+    }
+}
+
+fn update_from_crates(force: bool) -> Result<()> {
+    let latest = latest_crate_version()?;
+    println!(
+        "  {} {}",
+        style("current:").dim(),
+        style(BRISK_VERSION).cyan()
+    );
+    println!("  {} {}", style("latest: ").dim(), style(&latest).cyan());
+    if !is_newer(BRISK_VERSION, &latest) && !force {
+        println!("{} already up to date", style("✓").green());
+        println!(
+            "  {} use {} to reinstall anyway",
+            style("hint:").dim(),
+            style("-f / --force").yellow()
+        );
+        return Ok(());
+    }
+    let mut args = vec!["install", "brisk", "--bin", "brisk"];
+    if force || is_newer(BRISK_VERSION, &latest) {
+        args.push("--force");
+    }
+    run_cargo_install(&args, "install")?;
+    println!(
+        "{} updated to {}",
+        style("✓").green(),
+        style(format!("v{latest}")).cyan()
+    );
+    Ok(())
+}
+
+fn latest_crate_version() -> Result<String> {
+    let output = command("curl")
+        .arg("-fsSL")
+        .arg("https://crates.io/api/v1/crates/brisk")
+        .output()
+        .map_err(|err| BriskError::Message(format!("crates.io API request failed: {err}")))?;
+    let text = String::from_utf8_lossy(&output);
+    let needle = "\"max_stable_version\":\"";
+    let start = text
+        .find(needle)
+        .ok_or_else(|| BriskError::Message("failed to parse crates.io API response".to_string()))?
+        + needle.len();
+    let rest = &text[start..];
+    let end = rest
+        .find('"')
+        .ok_or_else(|| BriskError::Message("failed to parse crates.io API response".to_string()))?;
+    Ok(rest[..end].to_string())
+}
+
+fn update_from_source(force: bool, clean: bool, no_clean: bool) -> Result<()> {
+    println!(
+        "  {} {}",
+        style("current:").dim(),
+        style(BRISK_VERSION).cyan()
+    );
+    println!(
+        "  {} {}",
+        style("channel:").dim(),
+        style("nightly (GitHub HEAD)").yellow()
+    );
+    let mut args = vec![
+        "install",
+        "--git",
+        "https://github.com/plyght/brisk",
+        "--bin",
+        "brisk",
+    ];
+    if force {
+        args.push("--force");
+    }
+    run_cargo_install(&args, "build")?;
+    if clean {
+        let removed = cleanup_nightly_artifacts()?;
+        println!(
+            "{} cleaned {} nightly cache entr{}",
+            style("✓").green(),
+            removed,
+            if removed == 1 { "y" } else { "ies" }
+        );
+    } else if !no_clean {
+        println!(
+            "  {} use {} or {} to control nightly cache cleanup",
+            style("hint:").dim(),
+            style("--clean").yellow(),
+            style("--no-clean").yellow()
+        );
+    }
+    println!("{} installed nightly build from HEAD", style("✓").green());
+    Ok(())
+}
+
+fn run_cargo_install(args: &[&str], label: &str) -> Result<()> {
+    println!(
+        "  {} running {} (live output below)",
+        style(format!("{label}:")).dim(),
+        style(format!("cargo {}", args.join(" "))).yellow()
+    );
+    let status = std::process::Command::new("cargo")
+        .args(args)
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+        .map_err(|err| BriskError::Message(format!("failed to run cargo: {err}")))?;
+    if !status.success() {
+        return Err(BriskError::Message("cargo install failed".to_string()));
+    }
+    Ok(())
+}
+
+fn cleanup_nightly_artifacts() -> Result<usize> {
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| BriskError::Message("HOME is not set".to_string()))?;
+    let mut removed = 0usize;
+    for root in [
+        home.join(".cargo/git/checkouts"),
+        home.join(".cargo/git/db"),
+    ] {
+        let entries = match std::fs::read_dir(root) {
+            Ok(entries) => entries,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("brisk-") && path.is_dir() && std::fs::remove_dir_all(&path).is_ok()
+            {
+                removed += 1;
+            }
+        }
+    }
+    Ok(removed)
 }
 
 fn doctor() -> Result<()> {

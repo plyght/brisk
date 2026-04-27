@@ -5,8 +5,15 @@ edition = "2024"
 authors = ["Brisk Contributors"]
 description = "Build, test, sign, and ship native Swift macOS apps without living in Xcode"
 license = "MIT"
+repository = "https://github.com/plyght/brisk"
+homepage = "https://github.com/plyght/brisk"
+readme = "README.md"
 keywords = ["macos", "swift", "swiftui", "cli", "build-tool"]
 categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "brisk"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive", "cargo"] }
