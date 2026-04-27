@@ -257,8 +257,11 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Refresh lockfile for publish packaging
+        run: cargo generate-lockfile
+
       - name: Verify lockfile is up to date
-        run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
+        run: cargo metadata --locked --format-version 1 > /dev/null
 
       - name: Check crates.io version
         id: crates
