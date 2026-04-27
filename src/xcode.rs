@@ -178,7 +178,6 @@ pub fn list_xcode_project(
 fn xcode_app_path_with_plan(root: &Path, plan: &XcodePlan, opts: &BuildOptions) -> Result<PathBuf> {
     let derived_data = derived_data_path(root);
     let mut settings = command("xcodebuild");
-    plan.add_args(&mut settings);
     plan.add_build_args(&mut settings, &derived_data);
     settings.arg("-showBuildSettings").arg("-json");
     for arg in &opts.xcode_args {
