@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use cmd::command;
 use config::BriskConfig;
 use console::style;
-use direct::{build_direct_app, new_app};
+use direct::{archive_direct_app, build_direct_app, new_app, test_direct_app};
 use std::io;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -63,12 +63,12 @@ enum Commands {
     Run(XcodeBuildArgs),
     #[command(about = "Print the built .app path")]
     Path(XcodeBuildArgs),
-    #[command(about = "Run Xcode tests")]
-    Test(XcodeArgs),
-    #[command(about = "Archive an Xcode app")]
+    #[command(about = "Run tests")]
+    Test(XcodeBuildArgs),
+    #[command(about = "Archive the app")]
     Archive {
         #[command(flatten)]
-        args: XcodeArgs,
+        args: XcodeBuildArgs,
         #[arg(long, help = "Archive output path")]
         archive_path: Option<PathBuf>,
     },
@@ -158,13 +158,9 @@ fn run() -> Result<()> {
             println!("{}", app_path_for_current_project(&opts)?.display());
             Ok(())
         }
-        Commands::Test(args) => {
-            doctor_quiet(true)?;
-            test_xcode_app(&cwd()?, &xcode_options(args, cli.verbose))
-        }
+        Commands::Test(args) => test_app(build_options(args, cli.verbose)),
         Commands::Archive { args, archive_path } => {
-            doctor_quiet(true)?;
-            archive_xcode_app(&cwd()?, &xcode_options(args, cli.verbose), archive_path).map(|_| ())
+            archive_app(build_options(args, cli.verbose), archive_path).map(|_| ())
         }
         Commands::List(args) => list_xcode_project(&cwd()?, args.workspace, args.project),
         Commands::Doctor => doctor(),
@@ -187,21 +183,6 @@ fn build_options(args: XcodeBuildArgs, verbose: bool) -> BuildOptions {
     }
 }
 
-fn xcode_options(args: XcodeArgs, verbose: bool) -> BuildOptions {
-    BuildOptions {
-        release: false,
-        verbose,
-        backend: Backend::Xcode,
-        scheme: args.scheme,
-        workspace: args.container.workspace,
-        project: args.container.project,
-        configuration: args.configuration,
-        destination: args.destination,
-        sdk: args.sdk,
-        xcode_args: args.xcode_args,
-    }
-}
-
 fn build_app(opts: BuildOptions) -> Result<PathBuf> {
     let root = cwd()?;
     if should_use_xcode(&root, &opts)? {
@@ -210,6 +191,28 @@ fn build_app(opts: BuildOptions) -> Result<PathBuf> {
     } else {
         doctor_quiet(false)?;
         build_direct_app(&root, opts.release, opts.verbose)
+    }
+}
+
+fn test_app(opts: BuildOptions) -> Result<()> {
+    let root = cwd()?;
+    if should_use_xcode(&root, &opts)? {
+        doctor_quiet(true)?;
+        test_xcode_app(&root, &opts)
+    } else {
+        doctor_quiet(false)?;
+        test_direct_app(&root, opts.verbose)
+    }
+}
+
+fn archive_app(opts: BuildOptions, archive_path: Option<PathBuf>) -> Result<PathBuf> {
+    let root = cwd()?;
+    if should_use_xcode(&root, &opts)? {
+        doctor_quiet(true)?;
+        archive_xcode_app(&root, &opts, archive_path)
+    } else {
+        doctor_quiet(false)?;
+        archive_direct_app(&root, opts.release, opts.verbose, archive_path)
     }
 }
 

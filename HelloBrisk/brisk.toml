@@ -1,3 +1,16 @@
+[package]
 name = "HelloBrisk"
+version = "0.1.0"
+
+[app]
 bundle_id = "com.example.hellobrisk"
 deployment_target = "13.0"
+sources = "Sources"
+resources = ["Resources"]
+
+[signing]
+identity = "-"
+hardened_runtime = false
+
+[test]
+sources = "Tests"
