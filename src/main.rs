@@ -6,7 +6,7 @@ mod xcode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use cmd::command;
-use config::BriskConfig;
+use config::{BriskConfig, has_manifest};
 use console::style;
 use direct::{archive_direct_app, build_direct_app, new_app, test_direct_app};
 use std::io;
@@ -239,7 +239,7 @@ fn should_use_xcode(root: &Path, opts: &BuildOptions) -> Result<bool> {
             }
         }
         Backend::Auto => {
-            if root.join("brisk.toml").exists() {
+            if has_manifest(root) {
                 Ok(false)
             } else {
                 Ok(has_xcode_only_options(opts) || has_xcode_project(root))

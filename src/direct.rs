@@ -1,5 +1,7 @@
 use crate::cmd::command;
-use crate::config::{BriskConfig, SwiftPackageDependency, new_config};
+use crate::config::{
+    BriskConfig, SwiftPackageDependency, global_default_organization_id, manifest_path, new_config,
+};
 use crate::ui::{spinner, status, status_dim, success};
 use crate::{BriskError, Result, profile};
 use std::ffi::OsStr;
@@ -17,10 +19,7 @@ pub fn new_app(name: &str, bundle_id: Option<String>) -> Result<()> {
         )));
     }
 
-    let config = new_config(
-        name,
-        bundle_id.unwrap_or_else(|| format!("com.example.{}", sanitize_bundle_part(name))),
-    );
+    let config = new_config(name, bundle_id.unwrap_or(default_bundle_id(name)?));
 
     fs::create_dir_all(root.join("Sources"))?;
     fs::create_dir_all(root.join("Resources"))?;
@@ -37,7 +36,12 @@ pub fn new_app(name: &str, bundle_id: Option<String>) -> Result<()> {
     )?;
 
     status("create", root.display());
-    status_dim("write", root.join("brisk.toml").display());
+    status_dim(
+        "write",
+        manifest_path(&root)
+            .unwrap_or_else(|| root.join(".brisk.toml"))
+            .display(),
+    );
     status_dim("write", root.join("Sources/App.swift").display());
     status_dim("write", root.join("Sources/ContentView.swift").display());
     status_dim("write", root.join("Tests/SmokeTests.swift").display());
@@ -636,6 +640,16 @@ fn validate_app_name(name: &str) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+fn default_bundle_id(name: &str) -> Result<String> {
+    let organization_id =
+        global_default_organization_id()?.unwrap_or_else(|| "com.example".to_string());
+    Ok(format!(
+        "{}.{}",
+        organization_id.trim_end_matches('.'),
+        sanitize_bundle_part(name)
+    ))
 }
 
 fn sanitize_bundle_part(name: &str) -> String {

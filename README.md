@@ -10,7 +10,7 @@ Brisk is a native macOS app build system and project manager for Swift. It repla
 ## Features
 
 - **Xcode-Free Workflow**: Create, build, run, test, archive, clean, and inspect apps through one native CLI
-- **Brisk Manifest**: Uses `brisk.toml` as the source of truth for app metadata, sources, resources, signing, tests, and archive output
+- **Brisk Manifest**: Uses `.brisk.toml` as the source of truth for app metadata, sources, resources, signing, tests, and archive output
 - **Direct SwiftUI Builds**: Builds native macOS app bundles from Swift source without requiring an Xcode project
 - **Resource Bundling**: Copies configured resource files and directories into `Contents/Resources`
 - **Asset Catalogs**: Compiles configured `.xcassets` catalogs with `actool` and supports manifest-defined app icons
@@ -86,7 +86,7 @@ brisk build --scheme MyApp -- -allowProvisioningUpdates
 
 ## Configuration
 
-Direct Brisk projects use `brisk.toml` at the project root:
+Direct Brisk projects use `.brisk.toml` at the project root:
 
 ```toml
 [package]
@@ -141,7 +141,7 @@ New projects are created with this layout:
 
 ```text
 HelloBrisk/
-├── brisk.toml
+├── .brisk.toml
 ├── Resources/
 ├── Sources/
 │   ├── App.swift
@@ -152,7 +152,8 @@ HelloBrisk/
 
 By default, `brisk build`, `brisk test`, and `brisk archive` choose the backend automatically:
 
-- If `brisk.toml` exists, Brisk uses the direct backend
+- If `.brisk.toml` exists, Brisk uses the direct backend
+- If legacy `brisk.toml` exists, Brisk uses the direct backend
 - If an Xcode workspace or project exists, Brisk uses the `xcodebuild` compatibility backend
 - If Xcode-specific flags are provided, Brisk uses the `xcodebuild` compatibility backend
 
@@ -163,7 +164,21 @@ brisk build --backend direct
 brisk build --backend xcode --scheme MyApp
 ```
 
-Legacy top-level manifests are still accepted:
+Global defaults can be stored in `~/.config/brisk/config.toml`. Project `.brisk.toml` values override global values:
+
+```toml
+[defaults]
+organization_id = "com.example"
+deployment_target = "14.0"
+architectures = ["arm64"]
+
+[signing]
+identity = "Developer ID Application: Example"
+team_id = "ABCDE12345"
+hardened_runtime = true
+```
+
+Legacy `brisk.toml` manifests are still accepted:
 
 ```toml
 name = "HelloBrisk"
@@ -200,7 +215,7 @@ Use `-v` or `--verbose` to print the underlying commands Brisk runs.
 
 ## Xcode Replacement Scope
 
-Brisk now replaces the repeatable build-system parts of Xcode for direct macOS SwiftUI apps: app bundle creation, manifest metadata, resource copying, asset catalog compilation, SwiftPM dependencies, smoke tests, XCTest routing, signing, archives, zipped exports, notarization submission, and universal binary generation. Existing Xcode projects still use the compatibility backend for project features that are not safely modeled by `brisk.toml` yet.
+Brisk now replaces the repeatable build-system parts of Xcode for direct macOS SwiftUI apps: app bundle creation, manifest metadata, resource copying, asset catalog compilation, SwiftPM dependencies, smoke tests, XCTest routing, signing, archives, zipped exports, notarization submission, and universal binary generation. Existing Xcode projects still use the compatibility backend for project features that are not safely modeled by `.brisk.toml` yet.
 
 It does not replace Xcode's graphical editor, Interface Builder, visual debugger, Instruments, provisioning UI, simulator/device management UI, or every project-file feature. The direct backend is intended to keep expanding until most app builds do not need an Xcode project at all.
 

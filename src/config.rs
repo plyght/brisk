@@ -196,23 +196,30 @@ impl Default for TestConfig {
 
 impl BriskConfig {
     pub fn load(root: &Path) -> Result<Self> {
-        let path = root.join("brisk.toml");
-        let raw = fs::read_to_string(&path).map_err(|e| {
+        let path = manifest_path(root).ok_or_else(|| {
             BriskError::Message(format!(
-                "could not read {}: {}\nrun {} first, or use brisk in a directory with an .xcodeproj/.xcworkspace",
-                path.display(),
-                e,
+                "could not find .brisk.toml or brisk.toml in {}\nrun {} first, or use brisk in a directory with an .xcodeproj/.xcworkspace",
+                root.display(),
                 style("brisk new <name>").cyan()
             ))
         })?;
-        let mut config: Self = toml::from_str(&raw)?;
+        let raw = fs::read_to_string(&path).map_err(|e| {
+            BriskError::Message(format!("could not read {}: {}", path.display(), e))
+        })?;
+        let mut project: toml::Value = toml::from_str(&raw)?;
+        if let Some(mut global) = load_global_config()? {
+            normalize_global_config(&mut global);
+            merge_toml(&mut global, project);
+            project = global;
+        }
+        let mut config: Self = project.try_into()?;
         config.normalize();
         config.validate()?;
         Ok(config)
     }
 
     pub fn save(&self, root: &Path) -> Result<()> {
-        fs::write(root.join("brisk.toml"), toml::to_string_pretty(self)?)?;
+        fs::write(root.join(".brisk.toml"), toml::to_string_pretty(self)?)?;
         Ok(())
     }
 
@@ -265,6 +272,90 @@ impl BriskConfig {
             }
         }
         Ok(())
+    }
+}
+
+pub fn has_manifest(root: &Path) -> bool {
+    manifest_path(root).is_some()
+}
+
+pub fn manifest_path(root: &Path) -> Option<PathBuf> {
+    let dotfile = root.join(".brisk.toml");
+    if dotfile.exists() {
+        Some(dotfile)
+    } else {
+        let legacy = root.join("brisk.toml");
+        legacy.exists().then_some(legacy)
+    }
+}
+
+pub fn global_default_organization_id() -> Result<Option<String>> {
+    let Some(global) = load_global_config()? else {
+        return Ok(None);
+    };
+    Ok(global
+        .get("defaults")
+        .and_then(|defaults| defaults.get("organization_id"))
+        .and_then(toml::Value::as_str)
+        .map(str::to_string))
+}
+
+fn load_global_config() -> Result<Option<toml::Value>> {
+    let Some(home) = std::env::var_os("HOME") else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(home)
+        .join(".config")
+        .join("brisk")
+        .join("config.toml");
+    if !path.exists() {
+        return Ok(None);
+    }
+    Ok(Some(toml::from_str(&fs::read_to_string(path)?)?))
+}
+
+fn normalize_global_config(config: &mut toml::Value) {
+    let Some(table) = config.as_table_mut() else {
+        return;
+    };
+    if let Some(defaults) = table.remove("defaults")
+        && let Some(defaults) = defaults.as_table()
+    {
+        let app = table
+            .entry("app")
+            .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+        if let Some(app) = app.as_table_mut()
+            && let Some(value) = defaults.get("deployment_target")
+        {
+            app.entry("deployment_target")
+                .or_insert_with(|| value.clone());
+        }
+        let build = table
+            .entry("build")
+            .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+        if let Some(build) = build.as_table_mut()
+            && let Some(value) = defaults.get("architectures")
+        {
+            build
+                .entry("architectures")
+                .or_insert_with(|| value.clone());
+        }
+    }
+}
+
+fn merge_toml(base: &mut toml::Value, overlay: toml::Value) {
+    match (base, overlay) {
+        (toml::Value::Table(base), toml::Value::Table(overlay)) => {
+            for (key, value) in overlay {
+                match base.get_mut(&key) {
+                    Some(base_value) => merge_toml(base_value, value),
+                    None => {
+                        base.insert(key, value);
+                    }
+                }
+            }
+        }
+        (base, overlay) => *base = overlay,
     }
 }
 
@@ -361,5 +452,43 @@ deployment_target = "14.0"
         let mut config = new_config("Demo", "com.example.demo".to_string());
         config.build.architectures = vec!["ppc".to_string()];
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn dotfile_manifest_takes_priority() {
+        let root = std::env::temp_dir().join(format!("brisk-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("brisk.toml"), "").unwrap();
+        fs::write(root.join(".brisk.toml"), "").unwrap();
+        assert_eq!(manifest_path(&root), Some(root.join(".brisk.toml")));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn project_values_override_global_values() {
+        let mut global: toml::Value = toml::from_str(
+            r#"
+[app]
+deployment_target = "14.0"
+
+[build]
+architectures = ["arm64", "x86_64"]
+"#,
+        )
+        .unwrap();
+        let project: toml::Value = toml::from_str(
+            r#"
+[app]
+deployment_target = "15.0"
+"#,
+        )
+        .unwrap();
+        merge_toml(&mut global, project);
+        assert_eq!(global["app"]["deployment_target"].as_str(), Some("15.0"));
+        assert_eq!(
+            global["build"]["architectures"].as_array().unwrap().len(),
+            2
+        );
     }
 }
