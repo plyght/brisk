@@ -38,7 +38,7 @@ enum BriskError {
 #[derive(Parser)]
 #[command(name = "brisk")]
 #[command(version = VERSION)]
-#[command(about = "brisk - Cargo-like builds for native Swift macOS apps", long_about = None)]
+#[command(about = "brisk - native builds for Swift macOS apps", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

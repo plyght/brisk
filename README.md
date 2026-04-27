@@ -1,6 +1,6 @@
 <div align='center'>
     <h3>Brisk</h3>
-    <p>Cargo-like project management for native Swift macOS apps</p>
+    <p>Build, test, sign, and ship native Swift macOS apps without living in Xcode</p>
     <br/>
     <br/>
 </div>
@@ -9,7 +9,7 @@ Brisk is a native macOS app build system and project manager for Swift. It repla
 
 ## Features
 
-- **Cargo-Like Workflow**: Create, build, run, test, archive, clean, and inspect apps through one focused CLI
+- **Xcode-Free Workflow**: Create, build, run, test, archive, clean, and inspect apps through one native CLI
 - **Brisk Manifest**: Uses `brisk.toml` as the source of truth for app metadata, sources, resources, signing, tests, and archive output
 - **Direct SwiftUI Builds**: Builds native macOS app bundles from Swift source without requiring an Xcode project
 - **Resource Bundling**: Copies configured resource files and directories into `Contents/Resources`
