@@ -26,7 +26,7 @@ Brisk is a native macOS app build system and project manager for Swift. It repla
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/plyght/brisk/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/plyght/brisk/master/install.sh | bash
 
 # From source
 git clone https://github.com/plyght/brisk.git
